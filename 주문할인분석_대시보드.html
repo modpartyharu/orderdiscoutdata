@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>주문 할인 분석 대시보드</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f8f9fa;
+    color: #1a1a1a;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+  header { margin-bottom: 32px; }
+  header h1 { font-size: 18px; font-weight: 600; color: #1a1a1a; }
+  header p { margin-top: 4px; font-size: 13px; color: #888; }
+
+  /* Tabs */
+  .tabs-list {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    background: #eef0f3; border-radius: 8px; padding: 4px;
+    margin-bottom: 24px;
+  }
+  .tab-btn {
+    padding: 6px 14px; font-size: 13px; font-weight: 500;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: transparent; color: #555;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tab-btn.active { background: #fff; color: #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .tab-btn:hover:not(.active) { background: rgba(255,255,255,0.6); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: flex; flex-direction: column; gap: 24px; }
+
+  /* Card */
+  .card {
+    background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 10px; padding: 20px;
+  }
+  .card-title { font-size: 13px; font-weight: 500; color: #1a1a1a; margin-bottom: 16px; }
+
+  /* Summary Card */
+  .summary-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #888; }
+  .summary-row { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
+  .summary-value { font-size: 28px; font-weight: 600; color: #1a1a1a; }
+  .summary-total { font-size: 13px; color: #888; }
+  .progress-bg {
+    margin-top: 10px; height: 6px; width: 100%;
+    background: #eef0f3; border-radius: 999px; overflow: hidden;
+  }
+  .progress-fill { height: 100%; background: #1a1a1a; border-radius: 999px; transition: width 0.4s ease; }
+  .summary-pct { margin-top: 6px; font-size: 13px; font-weight: 500; color: #1a1a1a; }
+  .summary-desc { margin-top: 4px; font-size: 12px; color: #888; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { border-bottom: 1px solid #e5e7eb; }
+  th { padding-bottom: 8px; font-weight: 500; color: #888; }
+  th:first-child { text-align: left; }
+  th:not(:first-child) { text-align: right; }
+  th:last-child { width: 30%; text-align: right; }
+  tbody tr { border-bottom: 1px solid #e5e7eb; }
+  tbody tr:last-child { border-bottom: none; }
+  td { padding: 10px 0; color: #1a1a1a; }
+  td:first-child { text-align: left; }
+  td:not(:first-child) { text-align: right; }
+  td.bar-cell { padding-left: 12px; }
+  .bar-bg { height: 6px; background: #eef0f3; border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #1a1a1a; border-radius: 999px; }
+
+  /* Chart */
+  .chart-wrap { height: 256px; position: relative; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>주문 할인 분석 대시보드</h1>
+    <p>최근 6개월 주문 데이터 기준</p>
+  </header>
+
+  <div class="tabs-list">
+    <button class="tab-btn active" data-tab="point">적립금</button>
+    <button class="tab-btn" data-tab="coupon">쿠폰</button>
+    <button class="tab-btn" data-tab="grade">등급혜택</button>
+    <button class="tab-btn" data-tab="overview">최대할인 (할인수단 모두 사용)</button>
+    <button class="tab-btn" data-tab="pointCoupon">적립금+쿠폰</button>
+    <button class="tab-btn" data-tab="pointGrade">적립금+등급혜택</button>
+    <button class="tab-btn" data-tab="couponGrade">쿠폰+등급혜택</button></div>
+
+  <!-- 적립금 -->
+  <div class="tab-panel active" id="tab-point">
+    <div class="card">
+      <p class="summary-label">적립금 사용 주문</p>
+      <div class="summary-row">
+        <span class="summary-value">1,532</span>
+        <span class="summary-total">/ 11,025</span>
+      </div>
+      <div class="progress-bg"><div class="progress-fill" style="width:13.9%"></div></div>
+      <p class="summary-pct">13.9%</p>
+      <p class="summary-desc">적립금만 사용하여 할인</p>
+    </div>
+    <div class="card">
+      <p class="card-title">적립금 사용 구간별 분포</p>
+      <table>
+        <thead><tr><th>구간</th><th>건수</th><th>비율</th><th></th></tr></thead>
+        <tbody id="tbl-point"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <p class="card-title">월별 추이</p>
+      <div class="chart-wrap"><canvas id="chart-point"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 쿠폰 -->
+  <div class="tab-panel" id="tab-coupon">
+    <div class="card">
+      <p class="summary-label">쿠폰 사용 주문</p>
+      <div class="summary-row">
+        <span class="summary-value">5,353</span>
+        <span class="summary-total">/ 11,025</span>
+      </div>
+      <div class="progress-bg"><div class="progress-fill" style="width:48.6%"></div></div>
+      <p class="summary-pct">48.6%</p>
+      <p class="summary-desc">쿠폰만 사용하여 할인</p>
+    </div>
+    <div class="card">
+      <p class="card-title">쿠폰 할인 구간별 분포</p>
+      <table><thead><tr><th>구간</th><th>건수</th><th>비율</th><th></th></tr></thead>
+        <tbody id="tbl-coupon"></tbody></table>
+    </div>
+    <div class="card">
+      <p class="card-title">월별 추이</p>
+      <div class="chart-wrap"><canvas id="chart-coupon"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 등급혜택 -->
+  <div class="tab-panel" id="tab-grade">
+    <div class="card">
+      <p class="summary-label">등급혜택 주문</p>
+      <div class="summary-row">
+        <span class="summary-value">249</span>
+        <span class="summary-total">/ 11,025</span>
+      </div>
+      <div class="progress-bg"><div class="progress-fill" style="width:2.3%"></div></div>
+      <p class="summary-pct">2.3%</p>
+      <p class="summary-desc">등급혜택으로 할인</p>
+    </div>
+    <div class="card">
+      <p class="card-title">등급 할인 구간별 분포</p>
+      <table><thead><tr><th>구간</th><th>건수</th><th>비율</th><th></th></tr></thead>
+        <tbody id="tbl-grade"></tbody></table>
+    </div>
+    <div class="card">
+      <p class="card-title">월별 추이</p>
+      <div class="chart-wrap"><canvas id="chart-grade"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 최대할인 -->
+  <div class="tab-panel" id="tab-overview">
+    <div class="card">
+      <p class="summary-label">최대할인 주문 (할인수단 모두 사용)</p>
+      <div class="summary-row">
+        <span class="summary-value">66</span>
+        <span class="summary-total">/ 11,025</span>
+      </div>
+      <div class="progress-bg"><div class="progress-fill" style="width:0.6%"></div></div>
+      <p class="summary-pct">0.6%</p>
+      <p class="summary-desc">쿠폰, 적립금, 등급혜택 모두 사용</p>
+    </div>
+    <div class="card">
+      <p class="card-title">전체 할인 금액 구간별 분포</p>
+      <table><thead><tr><th>구간</th><th>건수</th><th>비율</th><th></th></tr></thead>
+        <tbody id="tbl-overview"></tbody></table>
+    </div>
+    <div class="card">
+      <p class="card-title">월별 추이</p>
+      <div class="chart-wrap"><canvas id="chart-overview"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 적립금+쿠폰 -->
+  <div class="tab-panel" id="tab-pointCoupon">
+    <div class="card">
+      <p class="summary-label">적립금+쿠폰 사용 주문</p>
+      <div class="summary-row">
+        <span class="summary-value">458</span>
+        <span class="summary-total">/ 11,025</span>
+      </div>
+      <div class="progress-bg"><div class="progress-fill" style="width:4.2%"></div></div>
+      <p class="summary-pct">4.2%</p>
+      <p class="summary-desc">적립금과 쿠폰을 함께 사용하여 할인</p>
+    </div>
+    <div class="card">
+      <p class="card-title">적립금+쿠폰 할인 구간별 분포</p>
+      <table><thead><tr><th>구간</th><th>건수</th><th>비율</th><th></th></tr></thead>
+        <tbody id="tbl-pointCoupon"></tbody></table>
+    </div>
+    <div class="card">
+      <p class="card-title">월별 추이</p>
+      <div class="chart-wrap"><canvas id="chart-pointCoupon"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 적립금+등급혜택 -->
+  <div class="tab-panel" id="tab-pointGrade">
+    <div class="card">
+      <p class="summary-label">적립금+등급혜택 사용 주문</p>
+      <div class="summary-row">
+        <span class="summary-value">165</span>
+        <span class="summary-total">/ 11,025</span>
+      </div>
+      <div class="progress-bg"><div class="progress-fill" style="width:1.5%"></div></div>
+      <p class="summary-pct">1.5%</p>
+      <p class="summary-desc">적립금과 등급혜택을 함께 사용하여 할인</p>
+    </div>
+    <div class="card">
+      <p class="card-title">적립금+등급혜택 할인 구간별 분포</p>
+      <table><thead><tr><th>구간</th><th>건수</th><th>비율</th><th></th></tr></thead>
+        <tbody id="tbl-pointGrade"></tbody></table>
+    </div>
+    <div class="card">
+      <p class="card-title">월별 추이</p>
+      <div class="chart-wrap"><canvas id="chart-pointGrade"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 쿠폰+등급혜택 -->
+  <div class="tab-panel" id="tab-couponGrade">
+    <div class="card">
+      <p class="summary-label">쿠폰+등급혜택 사용 주문</p>
+      <div class="summary-row">
+        <span class="summary-value">93</span>
+        <span class="summary-total">/ 11,025</span>
+      </div>
+      <div class="progress-bg"><div class="progress-fill" style="width:0.8%"></div></div>
+      <p class="summary-pct">0.8%</p>
+      <p class="summary-desc">쿠폰과 등급혜택을 함께 사용하여 할인</p>
+    </div>
+    <div class="card">
+      <p class="card-title">쿠폰+등급혜택 할인 구간별 분포</p>
+      <table><thead><tr><th>구간</th><th>건수</th><th>비율</th><th></th></tr></thead>
+        <tbody id="tbl-couponGrade"></tbody></table>
+    </div>
+    <div class="card">
+      <p class="card-title">월별 추이</p>
+      <div class="chart-wrap"><canvas id="chart-couponGrade"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DATA = {
+  point: {
+    ranges: [{"range":"1~1,000원","count":682,"percentage":44.5},{"range":"1,001~2,000원","count":398,"percentage":26.0},{"range":"2,001~3,000원","count":81,"percentage":5.3},{"range":"3,001~4,000원","count":105,"percentage":6.9},{"range":"4,001~5,000원","count":112,"percentage":7.3},{"range":"5,001~6,000원","count":47,"percentage":3.1},{"range":"6,001~7,000원","count":12,"percentage":0.8},{"range":"7,001~8,000원","count":10,"percentage":0.7},{"range":"8,001~9,000원","count":7,"percentage":0.5},{"range":"9,001~10,000원","count":78,"percentage":5.1},{"range":"10,001~20,000원","count":0,"percentage":0.0},{"range":"20,001~30,000원","count":0,"percentage":0.0},{"range":"30,001원 이상","count":0,"percentage":0.0}],
+    monthly: [{"month":"2025-09","total":1482,"discount":190},{"month":"2025-10","total":1790,"discount":271},{"month":"2025-11","total":1775,"discount":266},{"month":"2025-12","total":2245,"discount":306},{"month":"2026-01","total":1571,"discount":193},{"month":"2026-02","total":1659,"discount":224},{"month":"2026-03","total":503,"discount":82}],
+    discountLabel: '적립금 주문'
+  },
+  coupon: {
+    ranges: [{"range":"1~1,000원","count":1,"percentage":0.0},{"range":"1,001~2,000원","count":1,"percentage":0.0},{"range":"2,001~3,000원","count":99,"percentage":1.8},{"range":"3,001~4,000원","count":0,"percentage":0.0},{"range":"4,001~5,000원","count":4902,"percentage":91.6},{"range":"5,001~6,000원","count":4,"percentage":0.1},{"range":"6,001~7,000원","count":31,"percentage":0.6},{"range":"7,001~8,000원","count":23,"percentage":0.4},{"range":"8,001~9,000원","count":0,"percentage":0.0},{"range":"9,001~10,000원","count":230,"percentage":4.3},{"range":"10,001~20,000원","count":40,"percentage":0.7},{"range":"20,001~30,000원","count":11,"percentage":0.2},{"range":"30,001원 이상","count":11,"percentage":0.2}],
+    monthly: [{"month":"2025-09","total":1482,"discount":668},{"month":"2025-10","total":1790,"discount":880},{"month":"2025-11","total":1775,"discount":818},{"month":"2025-12","total":2245,"discount":1233},{"month":"2026-01","total":1571,"discount":874},{"month":"2026-02","total":1659,"discount":831},{"month":"2026-03","total":503,"discount":49}],
+    discountLabel: '쿠폰 주문'
+  },
+  grade: {
+    ranges: [{"range":"1~1,000원","count":0,"percentage":0.0},{"range":"1,001~2,000원","count":0,"percentage":0.0},{"range":"2,001~3,000원","count":241,"percentage":96.8},{"range":"3,001~4,000원","count":0,"percentage":0.0},{"range":"4,001~5,000원","count":8,"percentage":3.2},{"range":"5,001~6,000원","count":0,"percentage":0.0},{"range":"6,001~7,000원","count":0,"percentage":0.0},{"range":"7,001~8,000원","count":0,"percentage":0.0},{"range":"8,001~9,000원","count":0,"percentage":0.0},{"range":"9,001~10,000원","count":0,"percentage":0.0},{"range":"10,001~20,000원","count":0,"percentage":0.0},{"range":"20,001~30,000원","count":0,"percentage":0.0},{"range":"30,001원 이상","count":0,"percentage":0.0}],
+    monthly: [{"month":"2025-09","total":1482,"discount":34},{"month":"2025-10","total":1790,"discount":43},{"month":"2025-11","total":1775,"discount":40},{"month":"2025-12","total":2245,"discount":57},{"month":"2026-01","total":1571,"discount":27},{"month":"2026-02","total":1659,"discount":43},{"month":"2026-03","total":503,"discount":5}],
+    discountLabel: '등급혜택 주문'
+  },
+  overview: {
+    ranges: [{"range":"1~1,000원","count":0,"percentage":0.0},{"range":"1,001~2,000원","count":0,"percentage":0.0},{"range":"2,001~3,000원","count":0,"percentage":0.0},{"range":"3,001~4,000원","count":0,"percentage":0.0},{"range":"4,001~5,000원","count":0,"percentage":0.0},{"range":"5,001~6,000원","count":0,"percentage":0.0},{"range":"6,001~7,000원","count":0,"percentage":0.0},{"range":"7,001~8,000원","count":1,"percentage":1.5},{"range":"8,001~9,000원","count":0,"percentage":0.0},{"range":"9,001~10,000원","count":30,"percentage":45.5},{"range":"10,001~20,000원","count":33,"percentage":50.0},{"range":"20,001~30,000원","count":1,"percentage":1.5},{"range":"30,001원 이상","count":1,"percentage":1.5}],
+    monthly: [{"month":"2025-09","total":1482,"discount":4},{"month":"2025-10","total":1790,"discount":8},{"month":"2025-11","total":1775,"discount":7},{"month":"2025-12","total":2245,"discount":20},{"month":"2026-01","total":1571,"discount":12},{"month":"2026-02","total":1659,"discount":15},{"month":"2026-03","total":503,"discount":0}],
+    discountLabel: '할인 주문'
+  },
+  pointCoupon: {
+    ranges: [{"range":"1~1,000원","count":0,"percentage":0.0},{"range":"1,001~2,000원","count":0,"percentage":0.0},{"range":"2,001~3,000원","count":1,"percentage":0.2},{"range":"3,001~4,000원","count":19,"percentage":4.1},{"range":"4,001~5,000원","count":1,"percentage":0.2},{"range":"5,001~6,000원","count":137,"percentage":29.9},{"range":"6,001~7,000원","count":69,"percentage":15.1},{"range":"7,001~8,000원","count":23,"percentage":5.0},{"range":"8,001~9,000원","count":24,"percentage":5.2},{"range":"9,001~10,000원","count":56,"percentage":12.2},{"range":"10,001~20,000원","count":120,"percentage":26.2},{"range":"20,001~30,000원","count":3,"percentage":0.7},{"range":"30,001원 이상","count":5,"percentage":1.1}],
+    monthly: [{"month":"2025-09","total":1482,"discount":27},{"month":"2025-10","total":1790,"discount":48},{"month":"2025-11","total":1775,"discount":69},{"month":"2025-12","total":2245,"discount":155},{"month":"2026-01","total":1571,"discount":76},{"month":"2026-02","total":1659,"discount":78},{"month":"2026-03","total":503,"discount":5}],
+    discountLabel: '적립금+쿠폰 주문'
+  },
+  pointGrade: {
+    ranges: [{"range":"1~1,000원","count":0,"percentage":0.0},{"range":"1,001~2,000원","count":0,"percentage":0.0},{"range":"2,001~3,000원","count":0,"percentage":0.0},{"range":"3,001~4,000원","count":0,"percentage":0.0},{"range":"4,001~5,000원","count":63,"percentage":38.2},{"range":"5,001~6,000원","count":0,"percentage":0.0},{"range":"6,001~7,000원","count":22,"percentage":13.3},{"range":"7,001~8,000원","count":5,"percentage":3.0},{"range":"8,001~9,000원","count":5,"percentage":3.0},{"range":"9,001~10,000원","count":31,"percentage":18.8},{"range":"10,001~20,000원","count":37,"percentage":22.4},{"range":"20,001~30,000원","count":1,"percentage":0.6},{"range":"30,001원 이상","count":1,"percentage":0.6}],
+    monthly: [{"month":"2025-09","total":1482,"discount":22},{"month":"2025-10","total":1790,"discount":28},{"month":"2025-11","total":1775,"discount":27},{"month":"2025-12","total":2245,"discount":33},{"month":"2026-01","total":1571,"discount":21},{"month":"2026-02","total":1659,"discount":30},{"month":"2026-03","total":503,"discount":4}],
+    discountLabel: '적립금+등급혜택 주문'
+  },
+  couponGrade: {
+    ranges: [{"range":"1~1,000원","count":0,"percentage":0.0},{"range":"1,001~2,000원","count":0,"percentage":0.0},{"range":"2,001~3,000원","count":0,"percentage":0.0},{"range":"3,001~4,000원","count":0,"percentage":0.0},{"range":"4,001~5,000원","count":0,"percentage":0.0},{"range":"5,001~6,000원","count":0,"percentage":0.0},{"range":"6,001~7,000원","count":0,"percentage":0.0},{"range":"7,001~8,000원","count":15,"percentage":16.1},{"range":"8,001~9,000원","count":0,"percentage":0.0},{"range":"9,001~10,000원","count":36,"percentage":38.7},{"range":"10,001~20,000원","count":36,"percentage":38.7},{"range":"20,001~30,000원","count":5,"percentage":5.4},{"range":"30,001원 이상","count":1,"percentage":1.1}],
+    monthly: [{"month":"2025-09","total":1482,"discount":6},{"month":"2025-10","total":1790,"discount":12},{"month":"2025-11","total":1775,"discount":13},{"month":"2025-12","total":2245,"discount":32},{"month":"2026-01","total":1571,"discount":13},{"month":"2026-02","total":1659,"discount":17},{"month":"2026-03","total":503,"discount":0}],
+    discountLabel: '쿠폰+등급혜택 주문'
+  }
+};
+
+// Render tables
+const tabs = ['point','coupon','grade','overview','pointCoupon','pointGrade','couponGrade'];
+
+function renderTable(key) {
+  const tbody = document.getElementById('tbl-' + key);
+  if (!tbody) return;
+  DATA[key].ranges.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.range}</td>
+      <td>${row.count.toLocaleString()}</td>
+      <td>${row.percentage}%</td>
+      <td class="bar-cell">
+        <div class="bar-bg">
+          <div class="bar-fill" style="width:${Math.min(row.percentage,100)}%"></div>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+const charts = {};
+function renderChart(key) {
+  if (charts[key]) return;
+  const canvas = document.getElementById('chart-' + key);
+  if (!canvas) return;
+  const monthly = DATA[key].monthly;
+  const labels = monthly.map(d => d.month.slice(5) + '월');
+  charts[key] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: '전체 주문', data: monthly.map(d => d.total), backgroundColor: '#d1d5db', borderRadius: 2, barPercentage: 0.7 },
+        { label: DATA[key].discountLabel, data: monthly.map(d => d.discount), backgroundColor: '#374151', borderRadius: 2, barPercentage: 0.7 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { font: { size: 12 }, boxWidth: 14 } },
+        tooltip: { bodyFont: { size: 12 }, titleFont: { size: 12 } }
+      },
+      scales: {
+        x: { ticks: { font: { size: 12 }, color: '#888' }, grid: { color: '#f0f0f0' } },
+        y: { ticks: { font: { size: 12 }, color: '#888' }, grid: { color: '#f0f0f0' } }
+      }
+    }
+  });
+}
+
+// Init
+tabs.forEach(k => renderTable(k));
+renderChart('point'); // render first tab chart immediately
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + key).classList.add('active');
+    renderChart(key);
+  });
+});
+</script>
+</body>
+</html>
